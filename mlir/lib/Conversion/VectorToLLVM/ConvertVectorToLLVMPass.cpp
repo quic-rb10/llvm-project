@@ -86,6 +86,8 @@ void ConvertVectorToLLVMPass::runOnOperation() {
 
   // Convert to the LLVM IR dialect.
   LowerToLLVMOptions options(&getContext());
+  if (indexBitwidth != kDeriveIndexBitwidthFromDataLayout)
+    options.overrideIndexBitwidth(indexBitwidth);
   LLVMTypeConverter converter(&getContext(), options);
   RewritePatternSet patterns(&getContext());
   populateVectorTransferLoweringPatterns(patterns);

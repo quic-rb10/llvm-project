@@ -49,10 +49,9 @@ static Value insertOne(ConversionPatternRewriter &rewriter,
                        int64_t pos) {
   assert(rank > 0 && "0-D vector corner case should have been handled already");
   if (rank == 1) {
-    auto idxType = rewriter.getIndexType();
+    auto idxType = typeConverter.convertType(rewriter.getIndexType());
     auto constant = rewriter.create<LLVM::ConstantOp>(
-        loc, typeConverter.convertType(idxType),
-        rewriter.getIntegerAttr(idxType, pos));
+        loc, idxType, rewriter.getIntegerAttr(idxType, pos));
     return rewriter.create<LLVM::InsertElementOp>(loc, llvmType, val1, val2,
                                                   constant);
   }
@@ -64,10 +63,9 @@ static Value extractOne(ConversionPatternRewriter &rewriter,
                         const LLVMTypeConverter &typeConverter, Location loc,
                         Value val, Type llvmType, int64_t rank, int64_t pos) {
   if (rank <= 1) {
-    auto idxType = rewriter.getIndexType();
+    auto idxType = typeConverter.convertType(rewriter.getIndexType());
     auto constant = rewriter.create<LLVM::ConstantOp>(
-        loc, typeConverter.convertType(idxType),
-        rewriter.getIntegerAttr(idxType, pos));
+        loc, idxType, rewriter.getIntegerAttr(idxType, pos));
     return rewriter.create<LLVM::ExtractElementOp>(loc, llvmType, val,
                                                    constant);
   }
@@ -1064,10 +1062,9 @@ public:
 
     if (vectorType.getRank() == 0) {
       Location loc = extractEltOp.getLoc();
-      auto idxType = rewriter.getIndexType();
+      auto idxType = typeConverter->convertType(rewriter.getIndexType());
       auto zero = rewriter.create<LLVM::ConstantOp>(
-          loc, typeConverter->convertType(idxType),
-          rewriter.getIntegerAttr(idxType, 0));
+          loc, idxType, rewriter.getIntegerAttr(idxType, 0));
       rewriter.replaceOpWithNewOp<LLVM::ExtractElementOp>(
           extractEltOp, llvmType, adaptor.getVector(), zero);
       return success();
@@ -1198,10 +1195,9 @@ public:
 
     if (vectorType.getRank() == 0) {
       Location loc = insertEltOp.getLoc();
-      auto idxType = rewriter.getIndexType();
+      auto idxType = typeConverter->convertType(rewriter.getIndexType());
       auto zero = rewriter.create<LLVM::ConstantOp>(
-          loc, typeConverter->convertType(idxType),
-          rewriter.getIntegerAttr(idxType, 0));
+          loc, idxType, rewriter.getIntegerAttr(idxType, 0));
       rewriter.replaceOpWithNewOp<LLVM::InsertElementOp>(
           insertEltOp, llvmType, adaptor.getDest(), adaptor.getSource(), zero);
       return success();
@@ -1439,8 +1435,6 @@ public:
     if (llvm::any_of(*targetStrides, ShapedType::isDynamic))
       return failure();
 
-    auto int64Ty = IntegerType::get(rewriter.getContext(), 64);
-
     // Create descriptor.
     auto desc = MemRefDescriptor::poison(rewriter, loc, llvmTargetDescriptorTy);
     // Set allocated ptr.
@@ -1451,21 +1445,24 @@ public:
     Value ptr = sourceMemRef.alignedPtr(rewriter, loc);
     desc.setAlignedPtr(rewriter, loc, ptr);
     // Fill offset 0.
-    auto attr = rewriter.getIntegerAttr(rewriter.getIndexType(), 0);
-    auto zero = rewriter.create<LLVM::ConstantOp>(loc, int64Ty, attr);
+
+    auto idxType = typeConverter->convertType(rewriter.getIndexType());
+    auto zero = rewriter.create<LLVM::ConstantOp>(
+        loc, idxType, rewriter.getIntegerAttr(idxType, 0));
     desc.setOffset(rewriter, loc, zero);
 
     // Fill size and stride descriptors in memref.
     for (const auto &indexedSize :
          llvm::enumerate(targetMemRefType.getShape())) {
       int64_t index = indexedSize.index();
-      auto sizeAttr =
-          rewriter.getIntegerAttr(rewriter.getIndexType(), indexedSize.value());
-      auto size = rewriter.create<LLVM::ConstantOp>(loc, int64Ty, sizeAttr);
+
+      auto size = rewriter.create<LLVM::ConstantOp>(
+          loc, idxType, rewriter.getIntegerAttr(idxType, indexedSize.value()));
       desc.setSize(rewriter, loc, index, size);
-      auto strideAttr = rewriter.getIntegerAttr(rewriter.getIndexType(),
-                                                (*targetStrides)[index]);
-      auto stride = rewriter.create<LLVM::ConstantOp>(loc, int64Ty, strideAttr);
+
+      auto stride = rewriter.create<LLVM::ConstantOp>(
+          loc, idxType,
+          rewriter.getIntegerAttr(idxType, (*targetStrides)[index]));
       desc.setStride(rewriter, loc, index, stride);
     }
 
